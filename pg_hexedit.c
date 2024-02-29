@@ -2203,7 +2203,7 @@ static void WriteXminXmax(uint32 data, uint32 offset)
 	data = htole32(data);
 
 	// Convert data to hexadecimal representation of data to STDOUT
-  printf("  writing hex: %x at: %u\n", data, offset);
+  // printf("  writing hex: %x at: %u\n", data, offset);
 
 	// Write the data to the file
 	fwrite(&data, sizeof(data), 1, fp);
@@ -2337,7 +2337,7 @@ EmitXmlHeapTuple(BlockNumber blkno, OffsetNumber offset,
 
 	// Check if rawXmin is under the xcutoffid
 	if (rawXmin < xcutoffid) {
-		printf("Xmin - writing 2 to replace %u at offset %u\n", rawXmin, relfileOff);
+		printf("Xmin - writing 2 to replace %u at offset %u because %u < %u\n", rawXmin, relfileOff, rawXmin, xcutoffid);
 		WriteXminXmax(2, relfileOff);
 	}
 
