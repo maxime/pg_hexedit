@@ -110,7 +110,8 @@ typedef enum blockSwitches
 typedef enum segmentSwitches
 {
 	SEGMENT_SIZE_FORCED = 0x00000001,	/* -s: Segment size forced */
-	SEGMENT_NUMBER_FORCED = 0x00000002	/* -n: Segment number forced */
+	SEGMENT_NUMBER_FORCED = 0x00000002,	/* -n: Segment number forced */
+	SEGMENT_XCUTOFFID_FORCED = 0x00000004	/* -c: Segment xcutoffid forced */
 } segmentSwitches;
 
 /* -R[start]:Block range start */
@@ -176,6 +177,17 @@ typedef enum optionReturnCodes
 							 else						\
 							   _x |= _y;
 
+// Little endian conversion
+
+#ifdef __APPLE__
+    #include <libkern/OSByteOrder.h>
+    #define htole32(x) OSSwapHostToLittleInt32(x)
+#elif __linux__
+    #include <endian.h>
+#else
+    #error "Unknown compiler"
+#endif
+
 /*
  * Global variables for ease of use mostly
  */
@@ -194,6 +206,9 @@ static char *fileName = NULL;
 
 /* Cache for current block */
 static char *buffer = NULL;
+
+/* Transaction ID cutoff */
+static unsigned int xcutoffid = 0;
 
 /* Current block size */
 static unsigned int blockSize = 0;
@@ -299,6 +314,7 @@ static void EmitXmlAttributesIndex(BlockNumber blkno, OffsetNumber offset,
 static void EmitXmlAttributesData(BlockNumber blkno, OffsetNumber offset,
 								  uint32 relfileOff, unsigned char *tupdata,
 								  bits8 *t_bits, int nattrs, int datalen);
+static void WriteXminXmax(uint32 data, uint32 offset);
 static void EmitXmlHeapTuple(BlockNumber blkno, OffsetNumber offset,
 							 HeapTupleHeader htup, uint32 relfileOff,
 							 int itemSize);
@@ -341,13 +357,14 @@ DisplayOptions(unsigned int validOptions)
 			 HEXEDIT_VERSION, PG_VERSION);
 
 	printf
-		("\nUsage: pg_hexedit [-hklz] [-D attrlist] [-n segnumber] [-R startblock [endblock]] [-s segsize] [-x lsn] file\n\n"
+		("\nUsage: pg_hexedit [-hklz] [-D attrlist] [-n segnumber] [-R startblock [endblock]] [-s segsize] [-x lsn] [-c xcutoffid] file\n\n"
 		 "Output contents of PostgreSQL relation file as wxHexEditor XML tags\n"
 		 "  -D  Decode tuples using given comma separated list of attribute metadata\n"
 		 "      See README.md for an explanation of the attrlist format\n"
 		 "  -h  Display this information\n"
 		 "  -k  Verify all block checksums\n"
 		 "  -l  Skip leaf pages\n"
+		 "  -c  xcutoffid value to compare xmin\n"
 		 "  -n  Force segment number to [segnumber]\n"
 		 "  -R  Display specific block ranges within the file (Blocks are\n"
 		 "      indexed from 0)\n" "        [startblock]: block to start at\n"
@@ -584,6 +601,39 @@ ConsumeOptions(int numOptions, char **options)
 				break;
 			}
 		}
+		/* Check for the xcutoffid value. */
+		else if ((optionStringLength == 2)
+				 && (strcmp(optionString, "-c") == 0))
+		{
+			int			localxcutoffid;
+
+			SET_OPTION(segmentOptions, SEGMENT_XCUTOFFID_FORCED, 'c');
+			/* Only accept the forced size option once */
+			if (rc == OPT_RC_DUPLICATE)
+				break;
+
+			/* The token immediately following -c is the xcutoffid */
+			if (x >= (numOptions - 2))
+			{
+				rc = OPT_RC_INVALID;
+				fprintf(stderr, "pg_hexedit error: missing xcutoffid\n");
+				exitCode = 1;
+				break;
+			}
+
+			/* Next option encountered must be forced segment size */
+			optionString = options[++x];
+			if ((localxcutoffid = GetOptionValue(optionString)) > 0)
+				xcutoffid = (unsigned int) localxcutoffid;
+			else
+			{
+				rc = OPT_RC_INVALID;
+				fprintf(stderr, "pg_hexedit error: invalid xcutoffid \"%s\"\n",
+						optionString);
+				exitCode = 1;
+				break;
+			}
+		}
 		/* Check for the special case where the user forces a segment size. */
 		else if ((optionStringLength == 2)
 				 && (strcmp(optionString, "-s") == 0))
@@ -660,7 +710,7 @@ ConsumeOptions(int numOptions, char **options)
 			/* Check to see if this looks like an option string before opening */
 			if (optionString[0] != '-')
 			{
-				fp = fopen(optionString, "rb");
+				fp = fopen(optionString, "r+b");
 				if (fp)
 				{
 					fileName = options[x];
@@ -2117,6 +2167,35 @@ EmitXmlAttributesData(BlockNumber blkno, OffsetNumber offset,
 	}
 }
 
+// write a function `WriteXminXmax` that takes into argument:
+//  - data to write (4bytes integer) uint32
+//  - offset within the page block (not the offset from the beginning of the file) uint32
+
+// the function needs to:
+//  - move the file pointer fp to the beginning of the page block (size is stored in `blockSize`)
+//  - offset to the correct position from the argument
+//  - write with fwrite in little-endian encoding (32bit / 4 bytes integer)
+//  - move the file pointer fp back to the end of the page block (where it was initially)
+
+static void WriteXminXmax(uint32 data, uint32 offset)
+{
+	// Save the current position of the file pointer
+	long int currentPos = ftell(fp);
+
+	// Move the file pointer to the beginning of the page block
+	//   and move to the offset position
+	fseek(fp, -blockSize + offset, SEEK_CUR);
+
+	// Convert the data to little-endian
+	data = htole32(data);
+
+	// Write the data to the file
+	fwrite(&data, sizeof(data), 1, fp);
+
+	// Move the file pointer back to the end of the page block
+	fseek(fp, currentPos, SEEK_SET);
+}
+
 /*
  * Emit a wxHexEditor tag for entire heap tuple.
  *
@@ -2239,11 +2318,27 @@ EmitXmlHeapTuple(BlockNumber blkno, OffsetNumber offset,
 	relfileOffNext = relfileOff + sizeof(TransactionId);
 	EmitXmlTupleTagFont(blkno, offset, xmin, COLOR_RED_LIGHT, xminFontColor,
 						relfileOff, relfileOffNext - 1);
+
+	// Check if rawXmin is under the xcutoffid
+	if (rawXmin < xcutoffid) {
+		printf("Xmin - writing 2 to replace %u at offset %u\n", rawXmin, relfileOff);
+		WriteXminXmax(2, relfileOff);
+	}
+
 	relfileOff = relfileOffNext;
 	relfileOffNext += sizeof(TransactionId);
 	EmitXmlTupleTagFont(blkno, offset, xmax, COLOR_RED_LIGHT, xmaxFontColor,
 						relfileOff, relfileOffNext - 1);
+
+	// Check if rawXmax is not zero
+	// if not zero call the WriteXminXmax function to write zero at the relfileOff position
+	if (rawXmax != 0) {
+		printf("Xmax - writing 0 to replace %u at offset %u\n", rawXmax, relfileOff);
+		WriteXminXmax(0, relfileOff);
+	}
+
 	relfileOff = relfileOffNext;
+
 
 	if (!(htup->t_infomask & HEAP_MOVED))
 	{
