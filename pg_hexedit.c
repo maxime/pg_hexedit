@@ -2196,12 +2196,14 @@ static void WriteXminXmax(uint32 data, uint32 offset)
 	// Save the current position of the file pointer
 	long int currentPos = ftell(fp);
 
-	// Move the file pointer to the beginning of the page block
-	//   and move to the offset position
-	fseek(fp, -blockSize + offset, SEEK_CUR);
+	// Move to the offset position
+	fseek(fp, offset, SEEK_SET);
 
 	// Convert the data to little-endian
 	data = htole32(data);
+
+	// Convert data to hexadecimal representation of data to STDOUT
+  printf("  writing hex: %x at: %u\n", data, offset);
 
 	// Write the data to the file
 	fwrite(&data, sizeof(data), 1, fp);
