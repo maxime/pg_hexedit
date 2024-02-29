@@ -2336,7 +2336,7 @@ EmitXmlHeapTuple(BlockNumber blkno, OffsetNumber offset,
 						relfileOff, relfileOffNext - 1);
 
 	// Check if rawXmin is under the xcutoffid
-	if (rawXmin < xcutoffid) {
+	if ((rawXmin < xcutoffid) && (rawXmin != 2)) {
 		printf("Xmin - writing 2 to replace %u at offset %u because %u < %u\n", rawXmin, relfileOff, rawXmin, xcutoffid);
 		WriteXminXmax(2, relfileOff);
 	}
