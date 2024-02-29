@@ -37,6 +37,8 @@
  */
 #undef FRONTEND
 
+#undef ENABLE_OUTPUT
+
 /*
  * Define TrapMacro() as a no-op expression on builds that have assertions
  * enabled.  This is redundant though harmless when building without
@@ -1708,6 +1710,7 @@ EmitXmlDocHeader(int numOptions, char **options)
 		strcat(optionBuffer, " ");
 	}
 
+#ifdef ENABLE_OUTPUT
 	printf("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
 	printf("<!-- Dump created on: %s -->\n", timeStr);
 	printf("<!-- Options used: %s -->\n", (strlen(optionBuffer)) ? optionBuffer : "None");
@@ -1716,13 +1719,16 @@ EmitXmlDocHeader(int numOptions, char **options)
 	printf("<!-- pg_hexedit build PostgreSQL version: %s -->\n", PG_VERSION);
 	printf("<wxHexEditor_XML_TAG>\n");
 	printf("  <filename path=\"%s\">\n", fileName);
+#endif
 }
 
 static void
 EmitXmlFooter(void)
 {
+#ifdef ENABLE_OUTPUT
 	printf("  </filename>\n");
 	printf("</wxHexEditor_XML_TAG>\n");
+#endif
 }
 
 /*
@@ -1741,6 +1747,7 @@ EmitXmlTag(BlockNumber blkno, uint32 level, const char *name, const char *color,
 {
 	Assert(relfileOff <= relfileOffEnd);
 
+#ifdef ENABLE_OUTPUT
 	printf("    <TAG id=\"%u\">\n", tagNumber++);
 	printf("      <start_offset>%u</start_offset>\n", relfileOff);
 	printf("      <end_offset>%u</end_offset>\n", relfileOffEnd);
@@ -1755,6 +1762,7 @@ EmitXmlTag(BlockNumber blkno, uint32 level, const char *name, const char *color,
 	printf("      <font_colour>" COLOR_FONT_STANDARD "</font_colour>\n");
 	printf("      <note_colour>%s</note_colour>\n", color);
 	printf("    </TAG>\n");
+#endif
 }
 
 /*
@@ -1785,6 +1793,7 @@ EmitXmlItemId(BlockNumber blkno, OffsetNumber offset, ItemId itemId,
 	else if (!ItemIdIsUsed(itemId))
 		fontColor = COLOR_BLUE_DARK;
 
+#ifdef ENABLE_OUTPUT
 	/* Interpret the content of each ItemId separately */
 	printf("    <TAG id=\"%u\">\n", tagNumber++);
 	printf("      <start_offset>%u</start_offset>\n", relfileOff);
@@ -1795,6 +1804,7 @@ EmitXmlItemId(BlockNumber blkno, OffsetNumber offset, ItemId itemId,
 	printf("      <font_colour>%s</font_colour>\n", fontColor);
 	printf("      <note_colour>%s</note_colour>\n", itemIdColor);
 	printf("    </TAG>\n");
+#endif
 }
 
 /*
@@ -1831,6 +1841,7 @@ EmitXmlTupleTagFont(BlockNumber blkno, OffsetNumber offset, const char *name,
 		return;
 	}
 
+#ifdef ENABLE_OUTPUT
 	printf("    <TAG id=\"%u\">\n", tagNumber++);
 	printf("      <start_offset>%u</start_offset>\n", relfileOff);
 	printf("      <end_offset>%u</end_offset>\n", relfileOffEnd);
@@ -1839,6 +1850,7 @@ EmitXmlTupleTagFont(BlockNumber blkno, OffsetNumber offset, const char *name,
 	printf("      <font_colour>%s</font_colour>\n", fontColor);
 	printf("      <note_colour>%s</note_colour>\n", color);
 	printf("    </TAG>\n");
+#endif
 }
 
 /*
@@ -1867,6 +1879,7 @@ EmitXmlTupleTagFontTwoName(BlockNumber blkno, OffsetNumber offset,
 	strcat(combinednames, " - ");
 	strcat(combinednames, name2);
 
+#ifdef ENABLE_OUTPUT
 	printf("    <TAG id=\"%u\">\n", tagNumber++);
 	printf("      <start_offset>%u</start_offset>\n", relfileOff);
 	printf("      <end_offset>%u</end_offset>\n", relfileOffEnd);
@@ -1877,6 +1890,7 @@ EmitXmlTupleTagFontTwoName(BlockNumber blkno, OffsetNumber offset,
 	printf("    </TAG>\n");
 
 	pg_free(combinednames);
+#endif
 }
 
 /*
